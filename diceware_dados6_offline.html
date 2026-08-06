@@ -1,4 +1,4 @@
-<!-- v2.0 -->
+<!-- v2.1 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -61,6 +61,19 @@ button.secondary{background:var(--border)}
 .ref-table{width:100%;border-collapse:collapse;margin:8px 0}
 .ref-table th,.ref-table td{border:1px solid var(--border);padding:6px 10px;text-align:left;font-size:0.9em}
 .ref-table th{background:var(--border);color:var(--text)}
+.checksum-section{background:var(--bg);border:1px solid var(--blue);border-radius:6px;padding:16px;margin:16px 0}
+.checksum-section h3{margin-top:0}
+.checksum-dice-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.checksum-dice-row .die{width:44px;height:44px;font-size:1.2em}
+.checksum-dice-row .die-label{font-size:0.75em;color:var(--dim);text-align:center;margin-top:2px}
+.checksum-dice-wrap{display:flex;flex-direction:column;align-items:center}
+.bit-display{font-family:monospace;font-size:0.85em;color:var(--dim);margin:4px 0}
+.checksum-result{margin-top:12px}
+.checksum-result .word{font-size:1.8em;font-weight:bold;color:var(--green)}
+.checksum-breakdown{font-family:monospace;font-size:0.8em;color:var(--dim);margin:8px 0;word-break:break-all}
+.seed-final{margin-top:12px}
+.seed-final .word{font-size:1.2em;word-break:break-word}
+.seed-final .highlight{color:var(--green);font-weight:bold;text-decoration:underline}
 </style>
 </head>
 <body>
@@ -80,10 +93,10 @@ button.secondary{background:var(--border)}
 <div class="row">
 <label>Qtd palavras</label>
 <select id="passphraseSize" onchange="renderCollected()">
-<option value="11">11 palavras (~121 bits)</option>
-<option value="12" selected>12 palavras (128 bits)</option>
-<option value="23">23 palavras (~253 bits)</option>
-<option value="24">24 palavras (256 bits)</option>
+<option value="11" selected>11 palavras + checksum = seed de 12</option>
+<option value="12">12 palavras (sem checksum autom&#xE1;tico)</option>
+<option value="23">23 palavras + checksum = seed de 24</option>
+<option value="24">24 palavras (sem checksum autom&#xE1;tico)</option>
 </select>
 </div>
 
@@ -106,7 +119,7 @@ button.secondary{background:var(--border)}
 <div id="entropy-consulta"></div>
 
 <div class="note" style="margin-top:12px">
-<strong>Checksum:</strong> A &#xFA;ltima palavra de uma seed BIP39 (palavra 12 ou 24) cont&#xE9;m bits de checksum. Voc&#xEA; deve calcul&#xE1;-la separadamente usando uma ferramenta BIP39 adequada. As 11 ou 23 primeiras palavras s&#xE3;o geradas pelos dados.
+<strong>Checksum:</strong> A &#xFA;ltima palavra de uma seed BIP39 (palavra 12 ou 24) cont&#xE9;m bits de checksum. Selecione 11 ou 23 palavras e use a aba "Minha Seed" para calcular a palavra final automaticamente.
 </div>
 </div>
 
@@ -114,6 +127,7 @@ button.secondary{background:var(--border)}
 <h2>Minha Seed BIP39</h2>
 <p style="color:var(--dim);font-size:0.85em;margin-bottom:12px">Visualize sua seed completa e avalie a qualidade da entropia.</p>
 <div id="passphrase-display"></div>
+<div id="checksum-section"></div>
 <div id="entropy-passphrase"></div>
 </div>
 
@@ -440,6 +454,273 @@ function renderEntropy(targetId, words, totalWords) {
                 return '<div style="color:' + color + ';margin:2px 0">' + icon + ' ' + w.t + '</div>';
             }).join('') + '</div>' : '');
 }
+
+// ========== Pure JS SHA-256 ==========
+const SHA256 = (function() {
+    const K = [
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f11f1b,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ];
+    function rotr(n, x) { return (x >>> n) | (x << (32 - n)); }
+    function ch(x, y, z) { return (x & y) ^ (~x & z); }
+    function maj(x, y, z) { return (x & y) ^ (x & z) ^ (y & z); }
+    function sigma0(x) { return rotr(2, x) ^ rotr(13, x) ^ rotr(22, x); }
+    function sigma1(x) { return rotr(6, x) ^ rotr(11, x) ^ rotr(25, x); }
+    function gamma0(x) { return rotr(7, x) ^ rotr(18, x) ^ (x >>> 3); }
+    function gamma1(x) { return rotr(17, x) ^ rotr(19, x) ^ (x >>> 10); }
+
+    // hash takes a Uint8Array, returns Uint8Array(32)
+    function hash(data) {
+        const len = data.length;
+        const bitLen = len * 8;
+        // Padding
+        let padLen = len + 1;
+        while (padLen % 64 !== 56) padLen++;
+        const padded = new Uint8Array(padLen + 8);
+        padded.set(data);
+        padded[len] = 0x80;
+        // Length in bits as 64-bit big-endian (we only support up to 2^32 bits)
+        const dv = new DataView(padded.buffer);
+        dv.setUint32(padLen + 4, bitLen, false);
+
+        let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
+        let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+
+        for (let off = 0; off < padded.length; off += 64) {
+            const W = new Array(64);
+            for (let i = 0; i < 16; i++) {
+                W[i] = dv.getUint32(off + i * 4, false);
+            }
+            for (let i = 16; i < 64; i++) {
+                W[i] = (gamma1(W[i-2]) + W[i-7] + gamma0(W[i-15]) + W[i-16]) | 0;
+            }
+
+            let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+            for (let i = 0; i < 64; i++) {
+                const t1 = (h + sigma1(e) + ch(e, f, g) + K[i] + W[i]) | 0;
+                const t2 = (sigma0(a) + maj(a, b, c)) | 0;
+                h = g; g = f; f = e; e = (d + t1) | 0;
+                d = c; c = b; b = a; a = (t1 + t2) | 0;
+            }
+            h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0;
+            h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
+        }
+
+        const out = new Uint8Array(32);
+        const outDv = new DataView(out.buffer);
+        outDv.setUint32(0, h0, false); outDv.setUint32(4, h1, false);
+        outDv.setUint32(8, h2, false); outDv.setUint32(12, h3, false);
+        outDv.setUint32(16, h4, false); outDv.setUint32(20, h5, false);
+        outDv.setUint32(24, h6, false); outDv.setUint32(28, h7, false);
+        return out;
+    }
+    return { hash: hash };
+})();
+
+// ========== Checksum calculation ==========
+let checksumDice = []; // array of die values (1-6) for extra entropy bits
+let checksumCalculated = false;
+
+function getExtraBitsNeeded() {
+    const size = parseInt(document.getElementById('passphraseSize').value);
+    if (size === 12 || size === 11) return 7; // 12-word seed: 11 words * 11 = 121 bits, need 128 - 121 = 7
+    if (size === 24 || size === 23) return 3; // 24-word seed: 23 words * 11 = 253 bits, need 256 - 253 = 3
+    return 0;
+}
+
+function getSeedWordCount() {
+    const size = parseInt(document.getElementById('passphraseSize').value);
+    if (size === 12 || size === 11) return 12;
+    if (size === 24 || size === 23) return 24;
+    return size;
+}
+
+function getWordsNeededBeforeChecksum() {
+    const total = getSeedWordCount();
+    return total - 1; // 11 or 23
+}
+
+function cycleChecksumDie(idx) {
+    checksumDice[idx] = (checksumDice[idx] % 6) + 1;
+    renderChecksumSection();
+}
+
+function calculateChecksum() {
+    if (BIP39_WORDS.length === 0) return;
+    const neededWords = getWordsNeededBeforeChecksum();
+    if (collectedWords.length !== neededWords) return;
+
+    const extraBits = getExtraBitsNeeded();
+    if (checksumDice.length !== extraBits) return;
+
+    // Convert each collected word to its 11-bit index
+    let bitString = '';
+    for (const cw of collectedWords) {
+        const idx = BIP39_WORDS.indexOf(cw.word);
+        if (idx === -1) return;
+        bitString += idx.toString(2).padStart(11, '0');
+    }
+
+    // Add extra bits from dice (each die: 1-3 = 0, 4-6 = 1)
+    let extraBitString = '';
+    for (let i = 0; i < extraBits; i++) {
+        extraBitString += checksumDice[i] <= 3 ? '0' : '1';
+    }
+    bitString += extraBitString;
+
+    // Now bitString should be 128 bits (for 12-word) or 256 bits (for 24-word)
+    const entropyBits = bitString.length; // 128 or 256
+    const entropyBytes = new Uint8Array(entropyBits / 8);
+    for (let i = 0; i < entropyBits / 8; i++) {
+        entropyBytes[i] = parseInt(bitString.substr(i * 8, 8), 2);
+    }
+
+    // SHA-256 hash
+    const hashBytes = SHA256.hash(entropyBytes);
+
+    // Extract checksum bits: first (entropyBits / 32) bits of hash
+    const checksumBitCount = entropyBits / 32; // 4 for 128-bit, 8 for 256-bit
+    let checksumBits = '';
+    for (let i = 0; i < checksumBitCount; i++) {
+        const byteIdx = Math.floor(i / 8);
+        const bitIdx = 7 - (i % 8);
+        checksumBits += ((hashBytes[byteIdx] >> bitIdx) & 1).toString();
+    }
+
+    // Last word = extra bits + checksum bits → 11-bit index
+    const lastWordBits = extraBitString + checksumBits;
+    const lastWordIndex = parseInt(lastWordBits, 2);
+    const lastWord = BIP39_WORDS[lastWordIndex];
+
+    // Add to collectedWords
+    collectedWords.push({word: lastWord, bip39Index: lastWordIndex + 1});
+    checksumCalculated = true;
+
+    // Update size selector to match full seed
+    document.getElementById('passphraseSize').value = getSeedWordCount().toString();
+
+    renderCollected();
+    renderPassphrase();
+}
+
+function renderChecksumSection() {
+    const container = document.getElementById('checksum-section');
+    if (!container) return;
+
+    const size = parseInt(document.getElementById('passphraseSize').value);
+    // Only activate checksum for 11 or 23 word modes
+    if (size !== 11 && size !== 23) {
+        container.innerHTML = '';
+        return;
+    }
+    const neededWords = getWordsNeededBeforeChecksum();
+    const totalSeed = getSeedWordCount();
+
+    // Only show if we have exactly 11 or 23 words
+    if (collectedWords.length !== neededWords || checksumCalculated) {
+        if (checksumCalculated && collectedWords.length === totalSeed) {
+            // Show the completed seed with highlighted last word
+            const words = collectedWords.map(c => c.word);
+            const lastIdx = words.length - 1;
+            const wordsHtml = words.map(function(w, i) {
+                return i === lastIdx
+                    ? '<span class="highlight">' + w + '</span>'
+                    : w;
+            }).join(' ');
+            container.innerHTML = '<div class="checksum-section" style="border-color:var(--green)">' +
+                '<h3 style="color:var(--green)">Seed Completa (' + totalSeed + ' palavras)</h3>' +
+                '<div class="seed-final"><div class="word">' + wordsHtml + '</div></div>' +
+                '<p style="color:var(--dim);font-size:0.85em;margin-top:8px">A palavra #' + totalSeed + ' (' + collectedWords[lastIdx].word + ') foi calculada com checksum BIP39.</p>' +
+                '</div>';
+        } else {
+            container.innerHTML = '';
+        }
+        return;
+    }
+
+    const extraBits = getExtraBitsNeeded();
+
+    // Initialize checksumDice if needed
+    while (checksumDice.length < extraBits) checksumDice.push(1);
+    checksumDice.length = extraBits;
+
+    // Build dice UI
+    let diceHtml = '';
+    for (let i = 0; i < extraBits; i++) {
+        const val = checksumDice[i];
+        const bit = val <= 3 ? '0' : '1';
+        diceHtml += '<div class="checksum-dice-wrap">' +
+            '<div class="die' + (val > 1 ? ' set' : '') + '" onclick="cycleChecksumDie(' + i + ')">' + val + '</div>' +
+            '<div class="die-label">bit ' + (i+1) + ': ' + bit + '</div></div>';
+    }
+
+    // Show current extra bits
+    let currentExtraBits = '';
+    for (let i = 0; i < extraBits; i++) {
+        currentExtraBits += checksumDice[i] <= 3 ? '0' : '1';
+    }
+
+    const entropyTotalBits = totalSeed === 12 ? 128 : 256;
+    const checksumBitCount = totalSeed === 12 ? 4 : 8;
+    const wordBits = neededWords * 11;
+
+    container.innerHTML = '<div class="checksum-section">' +
+        '<h3>Calcular Palavra Final (Checksum)</h3>' +
+        '<p style="color:var(--dim);font-size:0.85em;margin-bottom:8px">' +
+        'A &#xFA;ltima palavra cont&#xE9;m bits de checksum. Role os dados para os ' + extraBits + ' bits extras de entropia.' +
+        '</p>' +
+        '<p style="color:var(--dim);font-size:0.8em;margin-bottom:8px">' +
+        'Cada dado funciona como uma moeda: faces 1-3 = bit 0, faces 4-6 = bit 1' +
+        '</p>' +
+        '<div class="checksum-dice-row">' + diceHtml + '</div>' +
+        '<div class="bit-display">Bits extras: ' + currentExtraBits + '</div>' +
+        '<div class="checksum-breakdown">' +
+        wordBits + ' bits das palavras + ' + extraBits + ' bits dos dados = ' + entropyTotalBits + ' bits &rarr; SHA256 &rarr; ' +
+        checksumBitCount + ' bits checksum &rarr; palavra #' + totalSeed +
+        '</div>' +
+        '<button onclick="calculateChecksum()">Calcular Palavra Final</button>' +
+        '</div>';
+}
+
+// Override renderPassphrase to include checksum section
+const _origRenderPassphrase = renderPassphrase;
+renderPassphrase = function() {
+    const container = document.getElementById('passphrase-display');
+    if (collectedWords.length === 0) {
+        container.innerHTML = '<div class="result-box"><div class="label">Nenhuma palavra coletada. Use a aba "Consulta de Dados" para montar sua seed.</div></div>';
+        document.getElementById('entropy-passphrase').innerHTML = '';
+        document.getElementById('checksum-section').innerHTML = '';
+        return;
+    }
+    const wordTexts = collectedWords.map(c => c.word);
+    container.innerHTML = '<div class="result-box"><div class="label">Sua Seed BIP39 (' + collectedWords.length + ' palavras):</div>' +
+        '<div class="word" style="font-size:1.3em;word-break:break-word">' + wordTexts.join(' ') + '</div></div>';
+    const size = parseInt(document.getElementById('passphraseSize').value);
+    renderEntropy('entropy-passphrase', wordTexts, size);
+    renderChecksumSection();
+};
+
+// Reset checksum state when words are cleared
+const _origResetCollected = resetCollected;
+resetCollected = function() {
+    checksumDice = [];
+    checksumCalculated = false;
+    _origResetCollected();
+};
+
+// Reset checksum when removing a word
+const _origRemoveCollectedWord = removeCollectedWord;
+removeCollectedWord = function(idx) {
+    checksumCalculated = false;
+    checksumDice = [];
+    _origRemoveCollectedWord(idx);
+};
 
 // Init
 renderCollected();
