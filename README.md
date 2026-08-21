@@ -1,6 +1,7 @@
 # BIP39 com Dados de 6 Lados
 
 Gere seeds BIP39 seguras usando dados comuns de 6 lados e a wordlist oficial BIP39 (2.048 palavras, 10 idiomas).
+Tutorial: https://youtu.be/cYcH_BWVgdQ
 
 ## Por que usar dados?
 
